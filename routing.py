@@ -98,20 +98,144 @@ def _nominatim_search(params):
 # GEOCODING
 # ============================================================
 
+# ArcGIS World Geocoding is used as the primary geocoder so the route finder
+# does not depend on the public Nominatim rate limit.  Nominatim remains only
+# as a fallback if ArcGIS is temporarily unavailable.
+ARCGIS_GEOCODER_URL = (
+    "https://geocode.arcgis.com/arcgis/rest/services/"
+    "World/GeocodeServer/findAddressCandidates"
+)
 
-# ============================================================
-# GEOCODING
-# ============================================================
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_MIN_INTERVAL = 1.1
+NOMINATIM_MAX_RETRIES = 2
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def geocode_place(place):
-    """Convert a place name/address into latitude and longitude."""
+USER_AGENT = "SmartTrafficPredictor/1.0 (route-planning-dashboard)"
 
-    place = str(place).strip()
+_geocoder_session = requests.Session()
+_geocoder_session.headers.update({"User-Agent": USER_AGENT})
+_nominatim_lock = threading.Lock()
+_last_nominatim_request = 0.0
 
-    if not place:
+
+class GeocodingRateLimitError(RuntimeError):
+    """Raised when the fallback public geocoder rate-limits the app."""
+    pass
+
+
+class GeocodingServiceError(RuntimeError):
+    """Raised when the geocoding service cannot be reached."""
+    pass
+
+
+def _wait_for_nominatim_slot():
+    """Ensure at least ~1.1 seconds between Nominatim requests."""
+    global _last_nominatim_request
+
+    with _nominatim_lock:
+        elapsed = time.monotonic() - _last_nominatim_request
+        if elapsed < NOMINATIM_MIN_INTERVAL:
+            time.sleep(NOMINATIM_MIN_INTERVAL - elapsed)
+        _last_nominatim_request = time.monotonic()
+
+
+def _retry_delay(response, attempt):
+    """Return a respectful delay using Retry-After when available."""
+    retry_after = response.headers.get("Retry-After")
+
+    if retry_after:
+        try:
+            return max(1.1, float(retry_after))
+        except ValueError:
+            try:
+                retry_date = parsedate_to_datetime(retry_after)
+                if retry_date.tzinfo is None:
+                    retry_date = retry_date.replace(tzinfo=timezone.utc)
+                seconds = (
+                    retry_date - datetime.now(timezone.utc)
+                ).total_seconds()
+                return max(1.1, seconds)
+            except (TypeError, ValueError, OverflowError):
+                pass
+
+    return 2.0 * (attempt + 1)
+
+
+def _geocode_with_arcgis(place):
+    """Geocode a place with the ArcGIS World Geocoding service."""
+    params = {
+        "singleLine": place,
+        "maxLocations": 1,
+        "outFields": "Match_addr,PlaceName,City,Region,Country",
+        "outSR": 4326,
+        "forStorage": "false",
+        "f": "json",
+    }
+
+    try:
+        response = _geocoder_session.get(
+            ARCGIS_GEOCODER_URL,
+            params=params,
+            timeout=15,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException as exc:
+        raise GeocodingServiceError(
+            f"Primary geocoding service unavailable: {exc}"
+        ) from exc
+
+    candidates = data.get("candidates", [])
+    if not candidates:
         return None
 
+    candidate = candidates[0]
+    location = candidate.get("location", {})
+
+    if "x" not in location or "y" not in location:
+        return None
+
+    return {
+        "lat": float(location["y"]),
+        "lon": float(location["x"]),
+        "display_name": (
+            candidate.get("address")
+            or candidate.get("attributes", {}).get("Match_addr")
+            or place
+        ),
+    }
+
+
+def _nominatim_search(params):
+    """Use Nominatim politely as a fallback only."""
+    for attempt in range(NOMINATIM_MAX_RETRIES + 1):
+        _wait_for_nominatim_slot()
+
+        response = _geocoder_session.get(
+            NOMINATIM_URL,
+            params=params,
+            timeout=15,
+        )
+
+        if response.status_code != 429:
+            response.raise_for_status()
+            return response
+
+        if attempt >= NOMINATIM_MAX_RETRIES:
+            raise GeocodingRateLimitError(
+                "The fallback geocoding service is rate-limiting requests. "
+                "Please try again shortly."
+            )
+
+        time.sleep(_retry_delay(response, attempt))
+
+    raise GeocodingRateLimitError(
+        "The fallback geocoding service is temporarily unavailable."
+    )
+
+
+def _geocode_with_nominatim(place):
+    """Fallback geocoder for cases where ArcGIS returns no usable result."""
     params = {
         "q": place,
         "format": "jsonv2",
@@ -132,14 +256,32 @@ def geocode_place(place):
     }
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def geocode_place(place):
+    """Convert a place name/address into latitude and longitude."""
+    place = str(place).strip()
+
+    if not place:
+        return None
+
+    # Primary: ArcGIS World Geocoding.
+    try:
+        result = _geocode_with_arcgis(place)
+        if result:
+            return result
+    except GeocodingServiceError:
+        # If the primary provider is temporarily unavailable, try the
+        # OpenStreetMap-based fallback below.
+        pass
+
+    # Fallback: Nominatim, with rate-limit protection.
+    return _geocode_with_nominatim(place)
+
+
 def geocode_two_places(start_location, destination):
     """Geocode starting location and destination."""
-
     start = geocode_place(start_location)
-
-    # geocode_place() already enforces the minimum request interval.
     end = geocode_place(destination)
-
     return start, end
 
 
