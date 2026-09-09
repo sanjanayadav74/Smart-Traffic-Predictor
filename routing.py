@@ -2,6 +2,7 @@ import time
 import threading
 from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
+from math import radians, sin, cos, asin, sqrt
 
 import requests
 import folium
@@ -9,108 +10,12 @@ import streamlit as st
 
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+ARCGIS_URL = "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates"
 OSRM_URL = "https://router.project-osrm.org/route/v1/driving"
 
-# Identify the application clearly when using the public Nominatim service.
-# The public service asks clients to stay around 1 request/second.
 USER_AGENT = "SmartTrafficPredictor/1.0 (route-planning-dashboard)"
 NOMINATIM_MIN_INTERVAL = 1.1
 NOMINATIM_MAX_RETRIES = 2
-
-# Keep a single session and enforce a minimum delay between geocoding requests.
-# This is especially important on Streamlit Cloud, where repeated reruns can
-# otherwise hit the public Nominatim rate limit.
-_nominatim_session = requests.Session()
-_nominatim_session.headers.update({"User-Agent": USER_AGENT})
-_nominatim_lock = threading.Lock()
-_last_nominatim_request = 0.0
-
-
-class GeocodingRateLimitError(RuntimeError):
-    """Raised when Nominatim continues to rate-limit the application."""
-    pass
-
-
-def _wait_for_nominatim_slot():
-    """Ensure at least ~1.1 seconds between Nominatim requests."""
-    global _last_nominatim_request
-
-    with _nominatim_lock:
-        elapsed = time.monotonic() - _last_nominatim_request
-        if elapsed < NOMINATIM_MIN_INTERVAL:
-            time.sleep(NOMINATIM_MIN_INTERVAL - elapsed)
-
-        _last_nominatim_request = time.monotonic()
-
-
-def _retry_delay(response, attempt):
-    """Return a respectful delay using Retry-After when available."""
-    retry_after = response.headers.get("Retry-After")
-
-    if retry_after:
-        try:
-            return max(1.1, float(retry_after))
-        except ValueError:
-            try:
-                retry_date = parsedate_to_datetime(retry_after)
-                if retry_date.tzinfo is None:
-                    retry_date = retry_date.replace(tzinfo=timezone.utc)
-                seconds = (
-                    retry_date - datetime.now(timezone.utc)
-                ).total_seconds()
-                return max(1.1, seconds)
-            except (TypeError, ValueError, OverflowError):
-                pass
-
-    # Back off progressively if the server does not provide Retry-After.
-    return 2.0 * (attempt + 1)
-
-
-def _nominatim_search(params):
-    """Call Nominatim politely and retry temporary rate limits."""
-    for attempt in range(NOMINATIM_MAX_RETRIES + 1):
-        _wait_for_nominatim_slot()
-
-        response = _nominatim_session.get(
-            NOMINATIM_URL,
-            params=params,
-            timeout=15,
-        )
-
-        if response.status_code != 429:
-            response.raise_for_status()
-            return response
-
-        if attempt >= NOMINATIM_MAX_RETRIES:
-            raise GeocodingRateLimitError(
-                "The public geocoding service is temporarily rate-limiting "
-                "requests. Please wait a few seconds and try again."
-            )
-
-        time.sleep(_retry_delay(response, attempt))
-
-    raise GeocodingRateLimitError(
-        "The public geocoding service is temporarily unavailable."
-    )
-
-
-# ============================================================
-# GEOCODING
-# ============================================================
-
-# ArcGIS World Geocoding is used as the primary geocoder so the route finder
-# does not depend on the public Nominatim rate limit.  Nominatim remains only
-# as a fallback if ArcGIS is temporarily unavailable.
-ARCGIS_GEOCODER_URL = (
-    "https://geocode.arcgis.com/arcgis/rest/services/"
-    "World/GeocodeServer/findAddressCandidates"
-)
-
-NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-NOMINATIM_MIN_INTERVAL = 1.1
-NOMINATIM_MAX_RETRIES = 2
-
-USER_AGENT = "SmartTrafficPredictor/1.0 (route-planning-dashboard)"
 
 _geocoder_session = requests.Session()
 _geocoder_session.headers.update({"User-Agent": USER_AGENT})
@@ -118,20 +23,8 @@ _nominatim_lock = threading.Lock()
 _last_nominatim_request = 0.0
 
 
-class GeocodingRateLimitError(RuntimeError):
-    """Raised when the fallback public geocoder rate-limits the app."""
-    pass
-
-
-class GeocodingServiceError(RuntimeError):
-    """Raised when the geocoding service cannot be reached."""
-    pass
-
-
 def _wait_for_nominatim_slot():
-    """Ensure at least ~1.1 seconds between Nominatim requests."""
     global _last_nominatim_request
-
     with _nominatim_lock:
         elapsed = time.monotonic() - _last_nominatim_request
         if elapsed < NOMINATIM_MIN_INTERVAL:
@@ -139,78 +32,9 @@ def _wait_for_nominatim_slot():
         _last_nominatim_request = time.monotonic()
 
 
-def _retry_delay(response, attempt):
-    """Return a respectful delay using Retry-After when available."""
-    retry_after = response.headers.get("Retry-After")
-
-    if retry_after:
-        try:
-            return max(1.1, float(retry_after))
-        except ValueError:
-            try:
-                retry_date = parsedate_to_datetime(retry_after)
-                if retry_date.tzinfo is None:
-                    retry_date = retry_date.replace(tzinfo=timezone.utc)
-                seconds = (
-                    retry_date - datetime.now(timezone.utc)
-                ).total_seconds()
-                return max(1.1, seconds)
-            except (TypeError, ValueError, OverflowError):
-                pass
-
-    return 2.0 * (attempt + 1)
-
-
-def _geocode_with_arcgis(place):
-    """Geocode a place with the ArcGIS World Geocoding service."""
-    params = {
-        "singleLine": place,
-        "maxLocations": 1,
-        "outFields": "Match_addr,PlaceName,City,Region,Country",
-        "outSR": 4326,
-        "forStorage": "false",
-        "f": "json",
-    }
-
-    try:
-        response = _geocoder_session.get(
-            ARCGIS_GEOCODER_URL,
-            params=params,
-            timeout=15,
-        )
-        response.raise_for_status()
-        data = response.json()
-    except requests.RequestException as exc:
-        raise GeocodingServiceError(
-            f"Primary geocoding service unavailable: {exc}"
-        ) from exc
-
-    candidates = data.get("candidates", [])
-    if not candidates:
-        return None
-
-    candidate = candidates[0]
-    location = candidate.get("location", {})
-
-    if "x" not in location or "y" not in location:
-        return None
-
-    return {
-        "lat": float(location["y"]),
-        "lon": float(location["x"]),
-        "display_name": (
-            candidate.get("address")
-            or candidate.get("attributes", {}).get("Match_addr")
-            or place
-        ),
-    }
-
-
-def _nominatim_search(params):
-    """Use Nominatim politely as a fallback only."""
+def _nominatim_request(params):
     for attempt in range(NOMINATIM_MAX_RETRIES + 1):
         _wait_for_nominatim_slot()
-
         response = _geocoder_session.get(
             NOMINATIM_URL,
             params=params,
@@ -221,68 +45,344 @@ def _nominatim_search(params):
             response.raise_for_status()
             return response
 
-        if attempt >= NOMINATIM_MAX_RETRIES:
-            raise GeocodingRateLimitError(
-                "The fallback geocoding service is rate-limiting requests. "
-                "Please try again shortly."
-            )
+        if attempt < NOMINATIM_MAX_RETRIES:
+            retry_after = response.headers.get("Retry-After")
+            delay = 2.0 * (attempt + 1)
 
-        time.sleep(_retry_delay(response, attempt))
+            if retry_after:
+                try:
+                    delay = max(1.1, float(retry_after))
+                except ValueError:
+                    try:
+                        dt = parsedate_to_datetime(retry_after)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        delay = max(
+                            1.1,
+                            (dt - datetime.now(timezone.utc)).total_seconds(),
+                        )
+                    except (TypeError, ValueError, OverflowError):
+                        pass
 
-    raise GeocodingRateLimitError(
-        "The fallback geocoding service is temporarily unavailable."
+            time.sleep(delay)
+
+    raise RuntimeError(
+        "Public geocoding service is temporarily rate-limiting requests. "
+        "Please try again in a few seconds."
     )
 
 
-def _geocode_with_nominatim(place):
-    """Fallback geocoder for cases where ArcGIS returns no usable result."""
-    params = {
-        "q": place,
-        "format": "jsonv2",
-        "limit": 1,
-        "addressdetails": 1,
-    }
+def _haversine_km(lat1, lon1, lat2, lon2):
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
 
-    response = _nominatim_search(params)
-    results = response.json()
+    a = (
+        sin(dlat / 2) ** 2
+        + cos(radians(lat1))
+        * cos(radians(lat2))
+        * sin(dlon / 2) ** 2
+    )
 
-    if not results:
+    return 6371.0 * 2 * asin(sqrt(a))
+
+
+def _candidate_from_arcgis(candidate):
+    location = candidate.get("location", {})
+
+    if "x" not in location or "y" not in location:
         return None
 
+    attrs = candidate.get("attributes", {})
+
     return {
-        "lat": float(results[0]["lat"]),
-        "lon": float(results[0]["lon"]),
-        "display_name": results[0]["display_name"],
+        "lat": float(location["y"]),
+        "lon": float(location["x"]),
+        "display_name": (
+            candidate.get("address")
+            or attrs.get("Match_addr")
+            or "Unknown location"
+        ),
+        "city": attrs.get("City") or "",
+        "region": attrs.get("Region") or "",
+        "country": attrs.get("Country") or "",
     }
+
+
+def _candidate_from_nominatim(result, query):
+    address = result.get("address", {})
+
+    return {
+        "lat": float(result["lat"]),
+        "lon": float(result["lon"]),
+        "display_name": result.get("display_name", query),
+        "city": (
+            address.get("city")
+            or address.get("town")
+            or address.get("municipality")
+            or address.get("village")
+            or ""
+        ),
+        "region": address.get("state") or "",
+        "country": address.get("country") or "",
+    }
+
+
+def _is_india(candidate):
+    country = str(candidate.get("country", "")).strip().lower()
+    return country in {
+        "india",
+        "republic of india",
+        "bharat",
+    }
+
+
+def _distance_from_bias(candidate, bias):
+    if not bias:
+        return 0.0
+
+    return _haversine_km(
+        bias["lat"],
+        bias["lon"],
+        candidate["lat"],
+        candidate["lon"],
+    )
+
+
+def _select_candidate(candidates, bias=None, max_bias_distance_km=None):
+    """
+    Select the best candidate.
+
+    When a bias is supplied, the closest candidate is preferred.
+    When a maximum distance is supplied, candidates beyond it are rejected.
+    """
+
+    if not candidates:
+        return None
+
+    india_candidates = [
+        candidate
+        for candidate in candidates
+        if _is_india(candidate)
+    ]
+
+    # Never select a non-India result for this India-focused route finder.
+    candidates = india_candidates
+
+    if not candidates:
+        return None
+
+    if bias:
+        ranked = sorted(
+            candidates,
+            key=lambda candidate: _distance_from_bias(candidate, bias),
+        )
+
+        if (
+            max_bias_distance_km is not None
+            and _distance_from_bias(ranked[0], bias)
+            > max_bias_distance_km
+        ):
+            return None
+
+        return ranked[0]
+
+    return candidates[0]
+
+
+def _build_context(place, bias):
+    query = str(place).strip()
+
+    if not bias:
+        return query
+
+    context = [
+        bias.get("city"),
+        bias.get("region"),
+        bias.get("country"),
+    ]
+
+    context = [
+        str(value).strip()
+        for value in context
+        if value and str(value).strip()
+    ]
+
+    if context:
+        return f"{query}, {', '.join(context)}"
+
+    return query
+
+
+def _arcgis_candidates(place, bias=None):
+    query = _build_context(place, bias)
+
+    params = {
+        "singleLine": query,
+        "maxLocations": 20,
+        "outFields": "Match_addr,PlaceName,City,Region,Country",
+        "outSR": 4326,
+        "sourceCountry": "IND",
+        "f": "json",
+    }
+
+    # ArcGIS uses the location as a spatial bias.
+    if bias:
+        params["location"] = f"{bias['lon']},{bias['lat']}"
+        params["distance"] = 100000
+
+    response = _geocoder_session.get(
+        ARCGIS_URL,
+        params=params,
+        timeout=15,
+    )
+    response.raise_for_status()
+
+    candidates = []
+
+    for item in response.json().get("candidates", []):
+        candidate = _candidate_from_arcgis(item)
+
+        if candidate and _is_india(candidate):
+            candidates.append(candidate)
+
+    return candidates
+
+
+def _nominatim_candidates(place, bias=None):
+    query = _build_context(place, bias)
+
+    params = {
+        "q": query,
+        "format": "jsonv2",
+        "limit": 20,
+        "addressdetails": 1,
+        "countrycodes": "in",
+    }
+
+    response = _nominatim_request(params)
+
+    candidates = []
+
+    for result in response.json():
+        candidate = _candidate_from_nominatim(result, query)
+
+        if _is_india(candidate):
+            candidates.append(candidate)
+
+    return candidates
+
+
+def _geocode_uncached(place, bias=None):
+    if not str(place).strip():
+        return None
+
+    # With a destination bias, require the selected result to be
+    # reasonably close to that destination. This prevents an ambiguous
+    # name such as "Clock Tower" from jumping to another Indian city.
+    max_bias_distance_km = 100 if bias else None
+
+    try:
+        candidates = _arcgis_candidates(place, bias)
+
+        selected = _select_candidate(
+            candidates,
+            bias=bias,
+            max_bias_distance_km=max_bias_distance_km,
+        )
+
+        if selected:
+            return selected
+
+    except requests.RequestException:
+        pass
+
+    candidates = _nominatim_candidates(place, bias)
+
+    return _select_candidate(
+        candidates,
+        bias=bias,
+        max_bias_distance_km=max_bias_distance_km,
+    )
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def geocode_place(place):
-    """Convert a place name/address into latitude and longitude."""
-    place = str(place).strip()
-
-    if not place:
-        return None
-
-    # Primary: ArcGIS World Geocoding.
-    try:
-        result = _geocode_with_arcgis(place)
-        if result:
-            return result
-    except GeocodingServiceError:
-        # If the primary provider is temporarily unavailable, try the
-        # OpenStreetMap-based fallback below.
-        pass
-
-    # Fallback: Nominatim, with rate-limit protection.
-    return _geocode_with_nominatim(place)
+def geocode_place(place, bias=None):
+    return _geocode_uncached(place, bias)
 
 
 def geocode_two_places(start_location, destination):
-    """Geocode starting location and destination."""
-    start = geocode_place(start_location)
-    end = geocode_place(destination)
-    return start, end
+    """
+    Resolve both locations within India.
+
+    The destination is resolved first. The start location is then
+    resolved normally and, if it is geographically far from the
+    destination, resolved again using the destination as context.
+
+    A final sanity check prevents obviously incorrect long-distance
+    matches for short local trips.
+    """
+
+    destination_result = geocode_place(destination)
+
+    if destination_result is None:
+        return None, None
+
+    start_result = geocode_place(start_location)
+
+    if start_result is None:
+        start_result = geocode_place(
+            start_location,
+            bias=destination_result,
+        )
+
+    elif (
+        _haversine_km(
+            start_result["lat"],
+            start_result["lon"],
+            destination_result["lat"],
+            destination_result["lon"],
+        )
+        > 100
+    ):
+        contextual = geocode_place(
+            start_location,
+            bias=destination_result,
+        )
+
+        if contextual:
+            start_result = contextual
+
+    if start_result is None:
+        return None, destination_result
+
+    # Final safety check:
+    # If a generic place resolves thousands of kilometres away,
+    # try contextual resolution one final time.
+    direct_distance = _haversine_km(
+        start_result["lat"],
+        start_result["lon"],
+        destination_result["lat"],
+        destination_result["lon"],
+    )
+
+    if direct_distance > 100:
+        contextual = geocode_place(
+            start_location,
+            bias=destination_result,
+        )
+
+        if contextual:
+            contextual_distance = _haversine_km(
+                contextual["lat"],
+                contextual["lon"],
+                destination_result["lat"],
+                destination_result["lon"],
+            )
+
+            if contextual_distance < direct_distance:
+                start_result = contextual
+
+    return start_result, destination_result
 
 
 # ============================================================
@@ -352,40 +452,20 @@ def calculate_route_score(
     - 20% route efficiency
     """
 
-    duration = max(
-        float(route.get("duration", 0)),
-        1,
-    )
+    duration = max(float(route.get("duration", 0)), 1)
+    distance = max(float(route.get("distance", 0)), 1)
 
-    distance = max(
-        float(route.get("distance", 0)),
-        1,
-    )
+    time_score = (fastest_duration / duration) * 100
+    distance_score = (shortest_distance / distance) * 100
 
-    # Lower travel time is better.
-    time_score = (
-        fastest_duration / duration
-    ) * 100
-
-    # Lower distance is better.
-    distance_score = (
-        shortest_distance / distance
-    ) * 100
-
-    # Time per kilometer.
     route_efficiency = duration / distance
-
-    # Normalize efficiency relative to the fastest route.
-    fastest_efficiency = (
-        fastest_duration / shortest_distance
-    )
+    fastest_efficiency = fastest_duration / shortest_distance
 
     if route_efficiency <= fastest_efficiency:
         efficiency_score = 100
     else:
         efficiency_score = (
-            fastest_efficiency
-            / route_efficiency
+            fastest_efficiency / route_efficiency
         ) * 100
 
     score = (
@@ -394,20 +474,10 @@ def calculate_route_score(
         + efficiency_score * 0.20
     )
 
-    return round(
-        min(max(score, 0), 100),
-        1,
-    )
+    return round(min(max(score, 0), 100), 1)
 
 
 def analyze_routes(routes):
-    """
-    Add transparent route scores and comparisons.
-
-    Returns:
-        analyzed_routes, best_index
-    """
-
     if not routes:
         return [], None
 
@@ -423,43 +493,26 @@ def analyze_routes(routes):
 
     analyzed_routes = []
 
-    for index, route in enumerate(routes):
-
+    for route in routes:
         route_copy = dict(route)
 
-        score = calculate_route_score(
+        route_copy["smart_score"] = calculate_route_score(
             route_copy,
             fastest_duration,
             shortest_distance,
         )
 
-        route_copy["smart_score"] = score
-
-        # Difference from fastest route.
-        delay_seconds = (
-            route_copy["duration"]
-            - fastest_duration
-        )
-
         route_copy["delay_seconds"] = max(
             0,
-            delay_seconds,
-        )
-
-        # Difference from shortest route.
-        extra_distance = (
-            route_copy["distance"]
-            - shortest_distance
+            route_copy["duration"] - fastest_duration,
         )
 
         route_copy["extra_distance"] = max(
             0,
-            extra_distance,
+            route_copy["distance"] - shortest_distance,
         )
 
-        analyzed_routes.append(
-            route_copy
-        )
+        analyzed_routes.append(route_copy)
 
     best_index = max(
         range(len(analyzed_routes)),
@@ -474,10 +527,6 @@ def get_route_status(
     fastest_duration,
     shortest_distance,
 ):
-    """
-    Create a simple human-readable route status.
-    """
-
     duration = route["duration"]
     distance = route["distance"]
 
@@ -496,12 +545,7 @@ def get_route_status(
     return "Alternative"
 
 
-def get_recommendation_reason(
-    route,
-    routes,
-):
-    """Explain why a route received its score."""
-
+def get_recommendation_reason(route, routes):
     if not routes:
         return "No route information available."
 
@@ -518,19 +562,13 @@ def get_recommendation_reason(
     reasons = []
 
     if route["duration"] == fastest_duration:
-        reasons.append(
-            "fastest estimated travel time"
-        )
+        reasons.append("fastest estimated travel time")
 
     if route["distance"] == shortest_distance:
-        reasons.append(
-            "shortest distance"
-        )
+        reasons.append("shortest distance")
 
     if route.get("smart_score", 0) >= 85:
-        reasons.append(
-            "strong overall route efficiency"
-        )
+        reasons.append("strong overall route efficiency")
 
     if not reasons:
         reasons.append(
@@ -545,12 +583,7 @@ def get_recommendation_reason(
 # ============================================================
 
 def format_duration(seconds):
-    """Convert seconds into a readable duration."""
-
-    total_minutes = round(
-        seconds / 60
-    )
-
+    total_minutes = round(seconds / 60)
     hours = total_minutes // 60
     minutes = total_minutes % 60
 
@@ -561,10 +594,7 @@ def format_duration(seconds):
 
 
 def format_distance(meters):
-    """Convert meters into kilometers."""
-
     kilometers = meters / 1000
-
     return f"{kilometers:.1f} km"
 
 
@@ -591,20 +621,13 @@ def create_route_map(
     ) / 2
 
     route_map = folium.Map(
-        location=[
-            center_lat,
-            center_lon,
-        ],
+        location=[center_lat, center_lon],
         zoom_start=12,
         control_scale=True,
     )
 
-    # Start marker.
     folium.Marker(
-        location=[
-            start["lat"],
-            start["lon"],
-        ],
+        location=[start["lat"], start["lon"]],
         popup=(
             f"<b>Start</b><br>"
             f"{start['display_name']}"
@@ -616,7 +639,6 @@ def create_route_map(
         ),
     ).add_to(route_map)
 
-    # Destination marker.
     folium.Marker(
         location=[
             destination["lat"],
@@ -641,16 +663,12 @@ def create_route_map(
     ]
 
     for index, route in enumerate(routes):
-
         coordinates = [
             [lat, lon]
-            for lon, lat
-            in route["geometry"]["coordinates"]
+            for lon, lat in route["geometry"]["coordinates"]
         ]
 
-        is_best = (
-            index == best_index
-        )
+        is_best = index == best_index
 
         if is_best:
             color = "green"
@@ -661,14 +679,9 @@ def create_route_map(
                 index % len(route_colors)
             ]
             weight = 5
-            label = (
-                f"Alternative Route "
-                f"{index + 1}"
-            )
+            label = f"Alternative Route {index + 1}"
 
-        score = route.get(
-            "smart_score"
-        )
+        score = route.get("smart_score")
 
         score_text = (
             f"<br>Smart Score: {score}/100"
