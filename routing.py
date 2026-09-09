@@ -1,4 +1,7 @@
 import time
+import threading
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 
 import requests
 import folium
@@ -8,7 +11,92 @@ import streamlit as st
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 OSRM_URL = "https://router.project-osrm.org/route/v1/driving"
 
-USER_AGENT = "SmartTrafficPredictor/1.0"
+# Identify the application clearly when using the public Nominatim service.
+# The public service asks clients to stay around 1 request/second.
+USER_AGENT = "SmartTrafficPredictor/1.0 (route-planning-dashboard)"
+NOMINATIM_MIN_INTERVAL = 1.1
+NOMINATIM_MAX_RETRIES = 2
+
+# Keep a single session and enforce a minimum delay between geocoding requests.
+# This is especially important on Streamlit Cloud, where repeated reruns can
+# otherwise hit the public Nominatim rate limit.
+_nominatim_session = requests.Session()
+_nominatim_session.headers.update({"User-Agent": USER_AGENT})
+_nominatim_lock = threading.Lock()
+_last_nominatim_request = 0.0
+
+
+class GeocodingRateLimitError(RuntimeError):
+    """Raised when Nominatim continues to rate-limit the application."""
+    pass
+
+
+def _wait_for_nominatim_slot():
+    """Ensure at least ~1.1 seconds between Nominatim requests."""
+    global _last_nominatim_request
+
+    with _nominatim_lock:
+        elapsed = time.monotonic() - _last_nominatim_request
+        if elapsed < NOMINATIM_MIN_INTERVAL:
+            time.sleep(NOMINATIM_MIN_INTERVAL - elapsed)
+
+        _last_nominatim_request = time.monotonic()
+
+
+def _retry_delay(response, attempt):
+    """Return a respectful delay using Retry-After when available."""
+    retry_after = response.headers.get("Retry-After")
+
+    if retry_after:
+        try:
+            return max(1.1, float(retry_after))
+        except ValueError:
+            try:
+                retry_date = parsedate_to_datetime(retry_after)
+                if retry_date.tzinfo is None:
+                    retry_date = retry_date.replace(tzinfo=timezone.utc)
+                seconds = (
+                    retry_date - datetime.now(timezone.utc)
+                ).total_seconds()
+                return max(1.1, seconds)
+            except (TypeError, ValueError, OverflowError):
+                pass
+
+    # Back off progressively if the server does not provide Retry-After.
+    return 2.0 * (attempt + 1)
+
+
+def _nominatim_search(params):
+    """Call Nominatim politely and retry temporary rate limits."""
+    for attempt in range(NOMINATIM_MAX_RETRIES + 1):
+        _wait_for_nominatim_slot()
+
+        response = _nominatim_session.get(
+            NOMINATIM_URL,
+            params=params,
+            timeout=15,
+        )
+
+        if response.status_code != 429:
+            response.raise_for_status()
+            return response
+
+        if attempt >= NOMINATIM_MAX_RETRIES:
+            raise GeocodingRateLimitError(
+                "The public geocoding service is temporarily rate-limiting "
+                "requests. Please wait a few seconds and try again."
+            )
+
+        time.sleep(_retry_delay(response, attempt))
+
+    raise GeocodingRateLimitError(
+        "The public geocoding service is temporarily unavailable."
+    )
+
+
+# ============================================================
+# GEOCODING
+# ============================================================
 
 
 # ============================================================
@@ -19,26 +107,19 @@ USER_AGENT = "SmartTrafficPredictor/1.0"
 def geocode_place(place):
     """Convert a place name/address into latitude and longitude."""
 
-    headers = {
-        "User-Agent": USER_AGENT
-    }
+    place = str(place).strip()
+
+    if not place:
+        return None
 
     params = {
         "q": place,
-        "format": "json",
+        "format": "jsonv2",
         "limit": 1,
         "addressdetails": 1,
     }
 
-    response = requests.get(
-        NOMINATIM_URL,
-        params=params,
-        headers=headers,
-        timeout=15,
-    )
-
-    response.raise_for_status()
-
+    response = _nominatim_search(params)
     results = response.json()
 
     if not results:
@@ -56,9 +137,7 @@ def geocode_two_places(start_location, destination):
 
     start = geocode_place(start_location)
 
-    # Respect Nominatim public-service rate limits.
-    time.sleep(1.1)
-
+    # geocode_place() already enforces the minimum request interval.
     end = geocode_place(destination)
 
     return start, end
