@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .streamlit/secrets.toml
 .DS_Store
+# Local backup files
+app_backup.py
+apy.py
+routing_backup.py
