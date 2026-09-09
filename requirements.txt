@@ -5,3 +5,6 @@ streamlit
 plotly
 openpyxl
 joblib
+requests
+folium
+streamlit-folium
