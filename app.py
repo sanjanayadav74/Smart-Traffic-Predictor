@@ -435,27 +435,68 @@ def load_models():
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def search_places(query):
-    """Search real-world places using OpenStreetMap Nominatim."""
-    url = "https://nominatim.openstreetmap.org/search"
-    headers = {
-        "User-Agent": "SmartTrafficPredictor/1.0"
-    }
+    """Search real-world places using ArcGIS geocoding."""
+
+    url = (
+        "https://geocode.arcgis.com/arcgis/rest/services/"
+        "World/GeocodeServer/findAddressCandidates"
+    )
+
     params = {
-        "q": query,
-        "format": "jsonv2",
-        "limit": 8,
-        "addressdetails": 1,
+        "singleLine": query,
+        "maxLocations": 8,
+        "outFields": "Match_addr,PlaceName,City,Region,Country",
+        "outSR": 4326,
+        "sourceCountry": "IND",
+        "f": "json",
     }
 
     response = requests.get(
         url,
         params=params,
-        headers=headers,
         timeout=15,
     )
-    response.raise_for_status()
-    return response.json()
 
+    response.raise_for_status()
+
+    candidates = response.json().get(
+        "candidates",
+        []
+    )
+
+    results = []
+
+    for candidate in candidates:
+
+        location = candidate.get(
+            "location",
+            {}
+        )
+
+        if "x" not in location or "y" not in location:
+            continue
+
+        attributes = candidate.get(
+            "attributes",
+            {}
+        )
+
+        results.append({
+            "display_name": (
+                candidate.get("address")
+                or attributes.get("Match_addr")
+                or query
+            ),
+            "lat": float(location["y"]),
+            "lon": float(location["x"]),
+            "address": (
+                candidate.get("address")
+                or attributes.get("Match_addr")
+                or query
+            ),
+        })
+
+    return results
 
 # ============================================================
 # CHECK FILES
