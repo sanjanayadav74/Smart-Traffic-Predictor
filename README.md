@@ -1,420 +1,221 @@
-🚦 Smart Traffic Predictor
+# 🚦 Smart Traffic Predictor
 
-<p align="center">
-  <strong>Intelligent Traffic Analysis • Smart Route Recommendation • Machine Learning</strong>
-</p>
+> An interactive Data Analytics and Machine Learning dashboard for traffic analysis, route comparison, and intelligent route recommendation.
 
-<p align="center">
-  A Streamlit-based traffic intelligence dashboard that combines location search, route comparison, traffic prediction, historical analysis, and interactive maps in one application.
-</p>
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://smart-traffic-predictor-36isyyh6pbovnbrytagqsu.streamlit.app/)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-black?logo=github)](https://github.com/sanjanayadav74/Smart-Traffic-Predictor)
+[![Python](https://img.shields.io/badge/Python-3.x-blue?logo=python)](https://www.python.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-App-red?logo=streamlit)](https://streamlit.io/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.x-blue?style=for-the-badge&logo=python" alt="Python">
-  <img src="https://img.shields.io/badge/Streamlit-App-red?style=for-the-badge&logo=streamlit" alt="Streamlit">
-  <img src="https://img.shields.io/badge/Machine%20Learning-Random%20Forest-orange?style=for-the-badge" alt="Machine Learning">
-  <img src="https://img.shields.io/badge/Maps-OpenStreetMap-green?style=for-the-badge&logo=openstreetmap" alt="OpenStreetMap">
-  <img src="https://img.shields.io/badge/Status-Active-success?style=for-the-badge" alt="Status">
-</p>
+---
 
-🌐 Live Demo
+## 🌐 Live Demo
 
-🚀 Live App: Add your Streamlit Cloud URL here
+### 👉 [Open Smart Traffic Predictor Dashboard](https://smart-traffic-predictor-36isyyh6pbovnbrytagqsu.streamlit.app/)
 
-📂 GitHub Repository:
-https://github.com/sanjanayadav74/Smart-Traffic-Predictor
+Try the deployed application directly in your browser.
 
-📸 Dashboard Preview
+---
 
-Add your latest application screenshot as images/dashboard.png in the repository.
+## 📌 Overview
 
-<p align="center">
-  <img src="images/dashboard.png" alt="Smart Traffic Predictor Dashboard" width="900">
-</p>
+**Smart Traffic Predictor** is an interactive **Data Analytics and Machine Learning dashboard** built using Python and Streamlit.
 
-✨ What This Project Does
+The project combines:
 
-Smart Traffic Predictor is an interactive web application designed to make traffic analysis and route planning easier.
+- Data Analytics
+- Machine Learning
+- Geospatial Location Search
+- Road-Network Routing
+- Data Visualization
+- Interactive Maps
+- Route Comparison
 
-The application lets users:
+The application provides a single dashboard where users can explore traffic-related data, search for real-world locations, compare routes, and view traffic-related machine learning predictions for supported locations.
 
-🔎 Search for real-world locations
+---
 
-🗺️ Find and compare multiple driving routes
+# 📊 Dashboard
 
-⭐ Calculate a Smart Route Score
+The Smart Traffic Predictor dashboard contains multiple components for traffic analysis and route recommendation.
 
-🚦 Analyze traffic conditions
+### 🗺️ Route Finder
 
-🤖 Predict traffic volume and congestion
+Users can enter:
 
-📊 Explore historical traffic data
+- Starting location
+- Destination
 
-📈 View interactive analytics
+The application searches for the locations, generates available driving routes, and compares them.
 
-🌍 Work with locations beyond the original fixed Dehradun route inputs
+### 🚗 Route Recommendation
 
-🗺️ Smart Route Finder
+Routes are compared using:
 
-Enter any starting location and destination to generate available driving routes.
+- Estimated travel time
+- Distance
+- Route efficiency
 
-The application:
+A transparent **Smart Score** is calculated to help identify the most suitable route.
 
-Searches and geocodes the locations.
+### 📍 Location Search
 
-Requests route information.
+Users can search for real-world locations and obtain:
 
-Finds multiple route alternatives where available.
+- Location name
+- Latitude
+- Longitude
+- Address information
 
-Calculates a Smart Route Score.
+### 📈 Traffic Analytics
 
-Recommends the best available route.
+The dashboard allows users to explore historical traffic data, including:
 
-Displays the selected route and alternatives on an interactive map.
+- Vehicle count
+- Average speed
+- Congestion
+- Weather conditions
+- Time-based traffic patterns
+- Location-based traffic information
 
-⭐ Smart Route Score
+### 🤖 Machine Learning Predictions
 
-The current scoring system combines three factors:
+The dashboard uses trained machine learning models to provide traffic-related predictions for locations supported by the training dataset.
 
-Travel Time      → 55%
-Distance         → 25%
-Route Efficiency → 20%
+### 🌦️ Weather Analysis
 
-pie showData
-    title Smart Route Score
-    "Estimated Travel Time" : 55
-    "Distance" : 25
-    "Route Efficiency" : 20
+Traffic data can be analyzed according to different weather conditions such as:
 
-Important: The current routing layer uses estimated route information. It does not claim to provide live traffic conditions unless a live traffic data provider is connected.
+- Clear
+- Cloudy
+- Rain
+- Fog
 
-🔎 Any-Location Search
+### 🚘 Vehicle & Speed Analysis
 
-The application uses OpenStreetMap Nominatim for location discovery.
+Users can explore relationships between:
 
-Users can search for:
+- Vehicle count
+- Average speed
+- Congestion
 
-🏙️ Cities
+### 🗺️ Interactive Route Map
 
-🛣️ Roads
+The selected routes are displayed on an interactive map using **Folium**, allowing users to visually compare route options.
 
-📍 Localities
+### 📋 Dataset Preview
 
-🏛️ Landmarks
+The dashboard also provides a preview of the traffic dataset used for analytics and machine learning.
 
-🌎 Locations outside Dehradun
+---
 
-Search results provide multiple matching places so the user can select the correct location.
+# ✨ Key Features
 
-🚦 Traffic Prediction
+- 🔎 Real-world location search
+- 🗺️ Interactive route visualization
+- 🚗 Multiple route comparison
+- ⭐ Smart route scoring
+- ⏱️ Estimated travel-time comparison
+- 📏 Distance comparison
+- 📊 Historical traffic analytics
+- 🤖 Machine learning predictions
+- 🌦️ Weather-based traffic analysis
+- 🚘 Vehicle and speed analysis
+- 📋 Dataset exploration
+- 💻 Interactive Streamlit dashboard
+- ☁️ Streamlit Community Cloud deployment
 
-The Machine Learning module predicts traffic-related outcomes using features such as:
+---
 
-Hour
+# 🧠 Smart Route Score
 
-Minute
+The project uses a transparent scoring system to compare available routes.
 
-Day of week
+| Factor | Weight |
+|---|---:|
+| Estimated Travel Time | 55% |
+| Distance | 25% |
+| Route Efficiency | 20% |
 
-Weekend status
+The route with the strongest overall score is recommended as the preferred route.
 
-Location
+> The current Smart Score is based on route-network information and does not represent real-time traffic congestion.
 
-Weather
+---
 
-Vehicle count
+# 🤖 Machine Learning
 
-Average speed
+The project currently uses two Random Forest models.
 
-🤖 Models
+## 1. Traffic Volume Prediction
 
-Model
+**Model:** Random Forest Regressor
 
-Purpose
+The model predicts traffic volume using traffic-related features from the project dataset.
 
-Random Forest Regressor
+### Performance
 
-Traffic volume prediction
+**Mean Absolute Error (MAE): 71.64 vehicles**
 
-Random Forest Classifier
+---
 
-Congestion prediction
+## 2. Congestion Classification
 
-📊 Current Model Results
+**Model:** Random Forest Classifier
 
-The current training run achieved:
+The model classifies traffic conditions using available traffic-related features.
 
-Traffic Volume Model MAE: 71.64 vehicles
+### Performance
 
-Congestion Model Accuracy: 76.60%
+**Accuracy: 76.60%**
 
-xychart-beta
-    title "Congestion Model Accuracy"
-    x-axis ["Accuracy"]
-    y-axis "Percentage" 0 --> 100
-    bar [76.60]
+> The current models are trained using a synthetic/historical dataset created for this project. Therefore, these models are intended as a project demonstration rather than a live traffic forecasting system.
 
-xychart-beta
-    title "Traffic Volume Model Error"
-    x-axis ["MAE"]
-    y-axis "Vehicles" 0 --> 100
-    bar [71.64]
+---
 
-These metrics describe the current training dataset/model and should not be interpreted as real-time traffic accuracy for every city.
+# 📊 Dataset
 
-📊 Historical Traffic Analytics
+The project traffic dataset contains features such as:
 
-The dashboard provides historical analysis for locations represented in the available dataset.
+- Date
+- Hour
+- Minute
+- Day of Week
+- Weekend indicator
+- Location
+- Weather
+- Vehicle Count
+- Average Speed
+- Congestion
 
-Users can explore:
+The dataset is used for:
 
-🚗 Vehicle count
+- Exploratory data analysis
+- Traffic pattern analysis
+- Machine learning
+- Visualization
+- Historical traffic insights
 
-🚦 Traffic volume
+---
 
-🏎️ Average speed
+# 🔄 How the Project Works
 
-🔴 Congestion
-
-🌦️ Weather conditions
-
-🕐 Time-based traffic patterns
-
-Interactive visualizations are powered by Plotly.
-
-🧠 Project Architecture
-
-flowchart TD
-    A[User] --> B[Streamlit Dashboard]
-
-    B --> C[Location Search]
-    B --> D[Smart Route Finder]
-    B --> E[Traffic Prediction]
-    B --> F[Historical Analytics]
-
-    C --> G[OpenStreetMap Nominatim]
-    D --> H[Routing Engine]
-    H --> I[Route Alternatives]
-    I --> J[Smart Route Score]
-    J --> K[Best Route Recommendation]
-    K --> L[Interactive Map]
-
-    E --> M[Feature Engineering]
-    M --> N[Random Forest Models]
-    N --> O[Traffic Volume]
-    N --> P[Congestion]
-
-    F --> Q[Traffic Dataset]
-    Q --> R[Interactive Charts]
-
-🔄 Application Workflow
-
-flowchart LR
-    A[Enter Location] --> B[Geocode]
-    B --> C[Generate Routes]
-    C --> D[Analyze Routes]
-    D --> E[Calculate Smart Score]
-    E --> F[Recommend Route]
-    F --> G[Show Interactive Map]
-
-🛠️ Technology Stack
-
-Programming
-
-Python
-
-Web Application
-
-Streamlit
-
-Data Analysis
-
-Pandas
-
-NumPy
-
-Machine Learning
-
-Scikit-learn
-
-Random Forest Regressor
-
-Random Forest Classifier
-
-Joblib
-
-Visualization
-
-Plotly
-
-Folium
-
-Maps & Geocoding
-
-OpenStreetMap
-
-Nominatim
-
-OSRM
-
-Streamlit-Folium
-
-📁 Project Structure
-
-Smart-Traffic-Predictor/
-│
-├── app.py
-├── routing.py
-├── train_model.py
-├── requirements.txt
-├── README.md
-├── .gitignore
-│
-├── data/
-│   └── traffic_data.csv
-│
-├── models/
-│   ├── traffic_volume_model.pkl
-│   ├── congestion_model.pkl
-│   └── feature_columns.pkl
-│
-└── images/
-    └── dashboard.png
-
-⚙️ Installation
-
-1. Clone the repository
-
-git clone https://github.com/sanjanayadav74/Smart-Traffic-Predictor.git
-
-2. Open the project
-
-cd Smart-Traffic-Predictor
-
-3. Create a virtual environment
-
-python -m venv venv
-
-4. Activate it
-
-Windows:
-
-venv\Scripts\activate
-
-macOS/Linux:
-
-source venv/bin/activate
-
-5. Install dependencies
-
-pip install -r requirements.txt
-
-▶️ Run Locally
-
-Start the application with:
-
-streamlit run app.py
-
-Then open:
-
-http://localhost:8501
-
-🤖 Train the Machine Learning Models
-
-To retrain the models:
-
-python train_model.py
-
-The generated models are saved in:
-
-models/
-
-📦 Main Dependencies
-
-pandas
-numpy
-scikit-learn
-streamlit
-plotly
-openpyxl
-joblib
-requests
-folium
-streamlit-folium
-
-⚠️ Current Limitations
-
-The current Machine Learning dataset contains a limited set of training locations and synthetic traffic observations.
-
-Therefore:
-
-The ML model is not yet a universal real-time traffic predictor.
-
-Historical analysis is limited to locations represented in the dataset.
-
-Routing information is based on the available routing service.
-
-Live traffic prediction requires integration with a real-time traffic data provider.
-
-The location-search and routing architecture is designed so that real-time traffic data can be integrated in future versions.
-
-🚀 Future Improvements
-
-🌐 Real-time traffic API integration
-
-🚗 Live congestion detection
-
-🧠 Generalized traffic prediction across cities
-
-🛰️ Road-level traffic features
-
-🌦️ Real-time weather integration
-
-📍 City-wide traffic analytics
-
-📱 Mobile-friendly UI
-
-🔔 Traffic alerts
-
-🛣️ Congestion-aware alternative routes
-
-📊 Advanced traffic forecasting
-
-🎯 Use Cases
-
-Daily route planning
-
-Traffic analysis
-
-Transportation research
-
-Delivery route planning
-
-Smart-city demonstrations
-
-Data analytics portfolios
-
-Machine Learning projects
-
-Route optimization
-
-👩‍💻 Author
-
-Sanjana Yadav
-
-B.Tech Computer Science & Engineering | Data Analytics
-
-Skills: Python • SQL • Excel • Power BI • Pandas • NumPy • Data Visualization • Machine Learning
-
-Connect With Me
-
-💼 LinkedIn: https://www.linkedin.com/in/sanjana-yadav-5226a0376
-
-💻 GitHub: https://github.com/sanjanayadav74
-
-⭐ Support
-
-If you find this project useful, please consider giving the repository a ⭐.
-
-📄 License
-
-This project is created for educational, portfolio, and demonstration purposes.
+```text
+                    SMART TRAFFIC PREDICTOR
+                             │
+             ┌───────────────┴───────────────┐
+             │                               │
+       ROUTE FINDER                    ANALYTICS DASHBOARD
+             │                               │
+     Start + Destination              Location Search
+             │                               │
+         Geocoding                   Traffic Dataset
+             │                               │
+       Route Generation              Historical Analysis
+             │                               │
+      Route Comparison                ML Prediction
+             │                               │
+       Smart Score                    Visual Insights
+             │                               │
+      Interactive Map                 Data Exploration
